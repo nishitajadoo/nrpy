@@ -104,6 +104,7 @@ Documented in: Tutorial-Start_to_Finish-Curvilinear_BCs.ipynb
 def BHaH_defines_set_gridfunction_defines_with_parity_types(
     set_parity_on_aux: bool = False,
     set_parity_on_auxevol: bool = False,
+    set_parity_on_superb_auxevol: bool = False,
     verbose: bool = True,
 ) -> str:
     """
@@ -111,6 +112,7 @@ def BHaH_defines_set_gridfunction_defines_with_parity_types(
 
     :param set_parity_on_aux: Flag to set parity on auxiliary variables. Default is False.
     :param set_parity_on_auxevol: Flag to set parity on auxevol variables. Default is False.
+    :param set_parity_on_superb_auxevol: Flag to set parity on superb auxevol variables. Default is False.
     :param verbose: Flag to control printing of details. Default is True.
     :return: A string containing the definitions for all grid functions with their parity types.
     """
@@ -119,7 +121,8 @@ def BHaH_defines_set_gridfunction_defines_with_parity_types(
         evolved_variables_list,
         auxiliary_variables_list,
         auxevol_variables_list,
-    ) = gri.BHaHGridFunction.gridfunction_lists()[0:3]
+        superb_auxevol_variables_list,
+    ) = gri.BHaHGridFunction.gridfunction_lists()[0:4]
 
     outstr = """
 /* PARITY TYPES FOR EVOLVED (plus optional) GRIDFUNCTIONS.
@@ -141,6 +144,12 @@ def BHaH_defines_set_gridfunction_defines_with_parity_types(
                 auxevol_variables_list
             )
             outstr += f"static const int8_t auxevol_gf_parity[{len(auxevol_variables_list)}] = {{ {', '.join(map(str, auxevol_parity_type))} }};\n"
+    if set_parity_on_superb_auxevol:
+        if len(superb_auxevol_variables_list) > 0:
+            superb_auxevol_parity_type = gri.BHaHGridFunction.set_parity_types(
+                superb_auxevol_variables_list
+            )
+            outstr += f"static const int8_t superb_auxevol_gf_parity[{len(superb_auxevol_variables_list)}] = {{ {', '.join(map(str, superb_auxevol_parity_type))} }};\n"
 
     if verbose:
         for i, evolved_variable in enumerate(evolved_variables_list):
@@ -156,6 +165,11 @@ def BHaH_defines_set_gridfunction_defines_with_parity_types(
             for i, auxevol_variable in enumerate(auxevol_variables_list):
                 print(
                     f'AuxEvol gridfunction "{auxevol_variable}" has parity type {auxevol_parity_type[i]}.'
+                )
+        if set_parity_on_superb_auxevol:
+            for i, superb_auxevol_variable in enumerate(superb_auxevol_parity_type):
+                print(
+                    f'SuperB AuxEvol gridfunction "{superb_auxevol_variable}" has parity type {superb_auxevol_parity_type[i]}.'
                 )
     return outstr
 
@@ -1317,6 +1331,7 @@ def CurviBoundaryConditions_register_C_functions(
     radiation_BC_fd_order: int = 2,
     set_parity_on_aux: bool = False,
     set_parity_on_auxevol: bool = False,
+    set_parity_on_superb_auxevol: bool = False,
     fp_type: str = "double",
 ) -> None:
     """
@@ -1326,6 +1341,7 @@ def CurviBoundaryConditions_register_C_functions(
     :param radiation_BC_fd_order: Finite differencing order for the radiation boundary conditions. Default is 2.
     :param set_parity_on_aux: If True, set parity on auxiliary grid functions.
     :param set_parity_on_auxevol: If True, set parity on auxiliary evolution grid functions.
+    :param set_parity_on_superb_auxevol: If True, set parity on auxiliary evolution grid functions for superB.
     :param fp_type: Floating point type, e.g., "double".
     """
     for CoordSystem in list_of_CoordSystems:
@@ -1393,6 +1409,7 @@ typedef struct __bc_struct__ {
     CBC_BHd_str += BHaH_defines_set_gridfunction_defines_with_parity_types(
         set_parity_on_aux=set_parity_on_aux,
         set_parity_on_auxevol=set_parity_on_auxevol,
+        set_parity_on_superb_auxevol=set_parity_on_superb_auxevol,
         verbose=True,
     )
     BHaH_defines_h.register_BHaH_defines(__name__, CBC_BHd_str)

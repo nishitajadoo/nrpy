@@ -140,9 +140,9 @@ class GridFunction:
             )
 
     @staticmethod
-    def gridfunction_lists() -> Tuple[List[str], List[str], List[str]]:
+    def gridfunction_lists() -> Tuple[List[str], List[str], List[str], List[str]]:
         """
-        Generate sorted lists of gridfunction names for each group type: 'EVOL', 'AUX', and 'AUXEVOL'.
+        Generate sorted lists of gridfunction names for each group type: 'EVOL', 'AUX', 'AUXEVOL', and 'SUPERB_AUXEVOL'.
 
         This function creates a dictionary with group types as keys and corresponding gridfunction names
         as values. It iterates through a global dictionary of gridfunctions, 'glb_gridfcs_dict', and
@@ -154,7 +154,7 @@ class GridFunction:
         gridfunction object should have 'group' and 'name' attributes.
 
         :returns: A tuple containing lists of gridfunction names
-                  for each group: 'EVOL', 'AUX', and 'AUXEVOL', respectively.
+                  for each group: 'EVOL', 'AUX', 'AUXEVOL', and 'SUPERB_AUXEVOL', respectively.
 
         Example:
             gridfunction_lists()
@@ -165,6 +165,7 @@ class GridFunction:
             "EVOL": [],
             "AUX": [],
             "AUXEVOL": [],
+            "SUPERB_AUXEVOL": [],
         }
 
         # Iterate through the global dictionary of gridfunctions.
@@ -178,7 +179,7 @@ class GridFunction:
             groups[group] = sorted(groups[group], key=lambda x: x.lower())
 
         # Pack the sorted lists into a tuple and return.
-        return groups["EVOL"], groups["AUX"], groups["AUXEVOL"]
+        return groups["EVOL"], groups["AUX"], groups["AUXEVOL"], groups["SUPERB_AUXEVOL"]
 
     @staticmethod
     def set_parity_types(list_of_gf_names: List[str]) -> List[int]:
@@ -284,6 +285,8 @@ class BHaHGridFunction(GridFunction):
                 self.gf_array_name = "in_gfs"
             elif group == "AUXEVOL":
                 self.gf_array_name = "auxevol_gfs"
+            elif group == "SUPERB_AUXEVOL":
+                self.gf_array_name = "superb_auxevol_gfs"
             elif group == "AUX":
                 self.gf_array_name = "aux_gfs"
         else:
@@ -293,10 +296,11 @@ class BHaHGridFunction(GridFunction):
         """
         Validate the gridfunction group.
 
-        The valid groups are 'EVOL', 'AUX' and 'AUXEVOL'.
+        The valid groups are 'EVOL', 'AUX', 'AUXEVOL' and 'SUPERB_AUXEVOL'.
 
         'EVOL': for evolved quantities (i.e., quantities stepped forward in time),
         'AUXEVOL': for auxiliary quantities needed at all points by evolved quantities,
+        'SUPERB_AUXEVOL': for superB auxiliary quantities that must be communicated between chares
         'AUX': for all other quantities needed at all gridpoints.
 
         :raises ValueError: If the group is not valid.
@@ -310,12 +314,14 @@ class BHaHGridFunction(GridFunction):
             "EVOL",
             "AUX",
             "AUXEVOL",
+            "SUPERB_AUXEVOL",
         )
         if self.group not in valid_groups:
             msg = (
                 f"Unsupported gridfunction group {self.group}. Supported groups include:\n"
                 '    "EVOL": for evolved quantities (i.e., quantities stepped forward in time),\n'
                 '    "AUXEVOL": for auxiliary quantities needed at all points by evolved quantities,\n'
+                '"SUPERB_AUXEVOL": for superB auxiliary quantities that must be communicated between chares,\n'
                 '    "AUX": for all other quantities needed at all gridpoints.\n'
             )
             raise ValueError(msg)
@@ -419,6 +425,7 @@ class BHaHGridFunction(GridFunction):
             evolved_variables_list,
             auxiliary_variables_list,
             auxevol_variables_list,
+            superb_auxevol_variables_list,
         ) = BHaHGridFunction.gridfunction_lists()
 
         outstr = f"{define_gfs('EVOL', evolved_variables_list)}"
@@ -442,6 +449,7 @@ class BHaHGridFunction(GridFunction):
 
         outstr += f"{define_gfs('AUX', auxiliary_variables_list)}"
         outstr += f"{define_gfs('AUXEVOL', auxevol_variables_list)}"
+        outstr += f"{define_gfs('SUPERB_AUXEVOL', superb_auxevol_variables_list)}"
 
         return outstr
 

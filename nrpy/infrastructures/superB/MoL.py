@@ -168,6 +168,73 @@ def register_CFunction_MoL_free_memory_diagnostic_gfs() -> None:
         raise RuntimeError(
             f"Error registering CFunction 'MoL_free_memory_diagnostic_gfs': {str(e)}"
         ) from e
+    
+
+def register_CFunction_MoL_malloc_superb_auxevol_gfs() -> None:
+    """
+    Register the CFunction 'MoL_malloc_superb_auxevol_gfs'.
+    This function allocates memory for grid functions that need to be communicated between chares.
+    :raises RuntimeError: If an error occurs while registering the CFunction
+    :return None
+    """
+    includes: List[str] = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
+    desc: str = "Allocate memory for superb_auxevol gfs"
+    cfunc_type: str = "void"
+    name: str = "MoL_malloc_superb_auxevol_gfs"
+    params: str = (
+        "const commondata_struct *restrict commondata, const params_struct *restrict params, MoL_gridfunctions_struct *restrict gridfuncs"
+    )
+    body: str = """
+const int Nxx_plus_2NGHOSTS_tot = Nxx_plus_2NGHOSTS0 * Nxx_plus_2NGHOSTS1 * Nxx_plus_2NGHOSTS2;
+gridfuncs->superb_auxevol_gfs = (REAL *restrict)malloc(sizeof(REAL) * NUM_SUPERB_AUXEVOL_GFS * Nxx_plus_2NGHOSTS_tot);
+"""
+    try:
+        cfc.register_CFunction(
+            includes=includes,
+            desc=desc,
+            cfunc_type=cfunc_type,
+            name=name,
+            params=params,
+            include_CodeParameters_h=True,
+            body=body,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Error registering CFunction 'MoL_malloc_superb_auxevol_gfs': {str(e)}"
+        ) from e
+
+
+def register_CFunction_MoL_free_memory_superb_auxevol_gfs() -> None:
+    """
+    Register the CFunction 'MoL_free_memory_superb_auxevol_gfs'.
+
+    This function frees the memory allocated for superb_auxevol grid functions.
+
+    :raises RuntimeError: If an error occurs while registering the CFunction
+
+    :return None
+    """
+    includes: List[str] = ["BHaH_defines.h", "BHaH_function_prototypes.h"]
+    desc: str = "Free memory for superb_auxevol gfs"
+    cfunc_type: str = "void"
+    name: str = "MoL_free_memory_superb_auxevol_gfs"
+    params: str = "MoL_gridfunctions_struct *restrict gridfuncs"
+    body: str = """
+  free(gridfuncs->superb_auxevol_gfs);
+"""
+    try:
+        cfc.register_CFunction(
+            includes=includes,
+            desc=desc,
+            cfunc_type=cfunc_type,
+            name=name,
+            params=params,
+            body=body,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Error registering CFunction 'MoL_free_memory_superb_auxevol_gfs': {str(e)}"
+        ) from e
 
 
 ########################################################################################################################
@@ -622,6 +689,7 @@ def register_CFunctions(
     enable_curviBCs: bool = False,
     enable_simd: bool = False,
     register_MoL_step_forward_in_time: bool = True,
+    using_superB_auxevol_gfs: bool = False,
 ) -> None:
     r"""
     Register all MoL C functions and NRPy basic defines.
@@ -634,6 +702,7 @@ def register_CFunctions(
     :param enable_curviBCs: Enable curvilinear boundary conditions. Default is False.
     :param enable_simd: Enable Single Instruction, Multiple Data (SIMD). Default is False.
     :param register_MoL_step_forward_in_time: Whether to register the MoL step forward function. Default is True.
+    :param using_superB_auxevol_gfs: Whether or not to use axiliary grid functions to communicate data between chares. Default is False.
 
     :return None
 
@@ -657,6 +726,10 @@ def register_CFunctions(
 
     register_CFunction_MoL_malloc_diagnostic_gfs()
     register_CFunction_MoL_free_memory_diagnostic_gfs()
+
+    if using_superB_auxevol_gfs:
+        register_CFunction_MoL_malloc_superb_auxevol_gfs()
+        register_CFunction_MoL_free_memory_superb_auxevol_gfs()
 
     if register_MoL_step_forward_in_time:
         register_CFunction_MoL_step_forward_in_time(
