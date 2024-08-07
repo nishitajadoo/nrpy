@@ -449,7 +449,8 @@ class BHaHGridFunction(GridFunction):
 
         outstr += f"{define_gfs('AUX', auxiliary_variables_list)}"
         outstr += f"{define_gfs('AUXEVOL', auxevol_variables_list)}"
-        outstr += f"{define_gfs('SUPERB_AUXEVOL', superb_auxevol_variables_list)}"
+        if superb_auxevol_variables_list:
+            outstr += f"{define_gfs('SUPERB_AUXEVOL', superb_auxevol_variables_list)}"
 
         return outstr
 

@@ -167,7 +167,7 @@ def BHaH_defines_set_gridfunction_defines_with_parity_types(
                     f'AuxEvol gridfunction "{auxevol_variable}" has parity type {auxevol_parity_type[i]}.'
                 )
         if set_parity_on_superb_auxevol:
-            for i, superb_auxevol_variable in enumerate(superb_auxevol_parity_type):
+            for i, superb_auxevol_variable in enumerate(superb_auxevol_variables_list):
                 print(
                     f'SuperB AuxEvol gridfunction "{superb_auxevol_variable}" has parity type {superb_auxevol_parity_type[i]}.'
                 )

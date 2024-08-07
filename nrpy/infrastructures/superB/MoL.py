@@ -23,6 +23,7 @@ import sympy as sp  # Import SymPy, a computer algebra system written entirely i
 import nrpy.c_function as cfc
 import nrpy.params as par  # NRPy+: Parameter interface
 from nrpy.infrastructures.BHaH import BHaH_defines_h, griddata_commondata
+from nrpy.grid import BHaHGridFunction
 from nrpy.infrastructures.BHaH.MoLtimestepping.MoL import (
     generate_gridfunction_names,
     is_diagonal_Butcher,
@@ -311,6 +312,16 @@ def register_CFunction_MoL_step_forward_in_time(
         _throwaway,
         _throwaway2,
     ) = generate_gridfunction_names(Butcher_dict, MoL_method)
+
+    (
+        _evolved_variables_list,
+        _auxiliary_variables_list,
+        _auxevol_variables_list,
+        superb_auxevol_variables_list,
+    ) = BHaHGridFunction.gridfunction_lists()
+    
+    if superb_auxevol_variables_list:
+        non_y_n_gridfunctions_list.append("superb_auxevol_gfs")
 
     gf_prefix = "griddata[grid].gridfuncs."
 
@@ -689,7 +700,6 @@ def register_CFunctions(
     enable_curviBCs: bool = False,
     enable_simd: bool = False,
     register_MoL_step_forward_in_time: bool = True,
-    using_superB_auxevol_gfs: bool = False,
 ) -> None:
     r"""
     Register all MoL C functions and NRPy basic defines.
@@ -702,7 +712,6 @@ def register_CFunctions(
     :param enable_curviBCs: Enable curvilinear boundary conditions. Default is False.
     :param enable_simd: Enable Single Instruction, Multiple Data (SIMD). Default is False.
     :param register_MoL_step_forward_in_time: Whether to register the MoL step forward function. Default is True.
-    :param using_superB_auxevol_gfs: Whether or not to use axiliary grid functions to communicate data between chares. Default is False.
 
     :return None
 
@@ -727,10 +736,6 @@ def register_CFunctions(
     register_CFunction_MoL_malloc_diagnostic_gfs()
     register_CFunction_MoL_free_memory_diagnostic_gfs()
 
-    if using_superB_auxevol_gfs:
-        register_CFunction_MoL_malloc_superb_auxevol_gfs()
-        register_CFunction_MoL_free_memory_superb_auxevol_gfs()
-
     if register_MoL_step_forward_in_time:
         register_CFunction_MoL_step_forward_in_time(
             Butcher_dict,
@@ -754,6 +759,21 @@ def register_CFunctions(
         _diagnostic_gridfunctions_point_to,
         _diagnostic_gridfunctions2_point_to,
     ) = generate_gridfunction_names(Butcher_dict, MoL_method=MoL_method)
+
+    (
+        _evolved_variables_list,
+        _auxiliary_variables_list,
+        _auxevol_variables_list,
+        superb_auxevol_variables_list,
+    ) = BHaHGridFunction.gridfunction_lists()
+    
+    if superb_auxevol_variables_list:
+
+        non_y_n_gridfunctions_list.append("superb_auxevol_gfs")
+
+        register_CFunction_MoL_malloc_superb_auxevol_gfs()
+        register_CFunction_MoL_free_memory_superb_auxevol_gfs()
+
 
     # Convert y_n_gridfunctions to a list if it's a string
     gf_list = (
