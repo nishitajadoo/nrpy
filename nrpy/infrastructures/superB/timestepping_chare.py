@@ -14,6 +14,7 @@ import sympy as sp  # Import SymPy, a computer algebra system written entirely i
 
 import nrpy.c_function as cfc
 from nrpy.helpers.generic import clang_format
+from nrpy.grid import BHaHGridFunction
 from nrpy.infrastructures.BHaH import griddata_commondata
 from nrpy.infrastructures.BHaH.MoLtimestepping.MoL import generate_gridfunction_names
 from nrpy.infrastructures.BHaH.MoLtimestepping.RK_Butcher_Table_Dictionary import (
@@ -158,9 +159,24 @@ const int Nxx_plus_2NGHOSTS_face0 = Nxx_plus_2NGHOSTS1 * Nxx_plus_2NGHOSTS2;
 const int Nxx_plus_2NGHOSTS_face1 = Nxx_plus_2NGHOSTS0 * Nxx_plus_2NGHOSTS2;
 const int Nxx_plus_2NGHOSTS_face2 = Nxx_plus_2NGHOSTS0 * Nxx_plus_2NGHOSTS1;
 
-tmpBuffers->tmpBuffer_EW = (REAL *restrict)malloc(sizeof(REAL) * NUM_EVOL_GFS * NGHOSTS * Nxx_plus_2NGHOSTS_face0);
-tmpBuffers->tmpBuffer_NS = (REAL *restrict)malloc(sizeof(REAL) * NUM_EVOL_GFS * NGHOSTS * Nxx_plus_2NGHOSTS_face1);
-tmpBuffers->tmpBuffer_TB = (REAL *restrict)malloc(sizeof(REAL) * NUM_EVOL_GFS * NGHOSTS * Nxx_plus_2NGHOSTS_face2);
+"""
+
+    num_gfs_str = "const int NUM_GFS = NUM_EVOL_GFS);\n"
+
+    (
+        _evolved_variables_list,
+        _auxiliary_variables_list,
+        _auxevol_variables_list,
+        superb_auxevol_variables_list,
+    ) = BHaHGridFunction.gridfunction_lists()
+    
+    if superb_auxevol_variables_list:
+        num_gfs_str = "const int NUM_GFS = MAX(NUM_EVOL_GFS, NUM_SUPERB_AUXEVOL_GFS);\n"
+
+    body += num_gfs_str + """
+tmpBuffers->tmpBuffer_EW = (REAL *restrict)malloc(sizeof(REAL) * NUM_GFS * NGHOSTS * Nxx_plus_2NGHOSTS_face0);
+tmpBuffers->tmpBuffer_NS = (REAL *restrict)malloc(sizeof(REAL) * NUM_GFS * NGHOSTS * Nxx_plus_2NGHOSTS_face1);
+tmpBuffers->tmpBuffer_TB = (REAL *restrict)malloc(sizeof(REAL) * NUM_GFS * NGHOSTS * Nxx_plus_2NGHOSTS_face2);
 """
     cfc.register_CFunction(
         includes=includes,
@@ -295,14 +311,33 @@ def generate_switch_statement_for_gf_types(
         [y_n_gridfunctions] if isinstance(y_n_gridfunctions, str) else y_n_gridfunctions
     )
     gf_list.extend(non_y_n_gridfunctions_list)
+    # If you'd like to communicate auxevol_gfs across chares, please define them as superb_auxevol_gfs variables
+    gf_list.remove("auxevol_gfs")
+
+    (
+        _evolved_variables_list,
+        _auxiliary_variables_list,
+        _auxevol_variables_list,
+        superb_auxevol_variables_list,
+    ) = BHaHGridFunction.gridfunction_lists()
+    
+    if superb_auxevol_variables_list:
+        gf_list.append("superb_auxevol_gfs")
+
+    num_gfs_str = "    NUM_GFS = NUM_EVOL_GFS;"
 
     switch_statement = """
+int NUM_GFS;
+
 switch (type_gfs) {
 """
     switch_cases = []
     for gf in gf_list:
         switch_cases.append(f"  case {gf.upper()}:")
         switch_cases.append(f"    gfs = griddata_chare[grid].gridfuncs.{gf.lower()};")
+        if gf=="superb_auxevol_gfs":
+            num_gfs_str = "    NUM_GFS = NUM_SUPERB_AUXEVOL_GFS;"
+        switch_cases.append(num_gfs_str)
         switch_cases.append("    break;")
     switch_cases.append(
         """
@@ -384,6 +419,14 @@ extern /* readonly */ CProxy_Main mainProxy;
 *Step 1.c: Allocate NUMGRIDS griddata arrays, each containing data specific to an individual grid.
 *Step 1.d: Set each CodeParameter in griddata.params to default.
 """
+
+    (
+        _evolved_variables_list,
+        _auxiliary_variables_list,
+        _auxevol_variables_list,
+        superb_auxevol_variables_list,
+    ) = BHaHGridFunction.gridfunction_lists()
+        
     if enable_CurviBCs:
         file_output_str += "*Step 1.e: Set non-parfile parameters related to numerical grid, then set up numerical grids and CFL-limited timestep.\n"
     if enable_rfm_precompute:
@@ -434,7 +477,16 @@ Timestepping::Timestepping(CommondataObject &&inData) {
   // Step 3: Allocate storage for non-y_n gridfunctions, needed for the Runge-Kutta-like timestepping
   for(int grid=0; grid<commondata.NUMGRIDS; grid++)
     MoL_malloc_non_y_n_gfs(&commondata, &griddata_chare[grid].params, &griddata_chare[grid].gridfuncs);
-    
+
+"""
+    if superb_auxevol_variables_list:
+        file_output_str += r"""
+  // Allocate storage for superb auxevol gridfunctions, to communicate non-evolved data across chares
+  for(int grid=0; grid<commondata.NUMGRIDS; grid++)
+    MoL_malloc_superb_auxevol_gfs(&commondata, &griddata_chare[grid].params, &griddata_chare[grid].gridfuncs);
+
+"""
+    file_output_str += r"""    
   // Step 4: Finalize initialization: set up initial data, etc.
   initial_data(&commondata, griddata_chare);
 """
@@ -456,7 +508,7 @@ Timestepping::Timestepping(CommondataObject &&inData) {
 
 """
     if initialize_constant_auxevol:
-        file_output_str += r"""
+      file_output_str += r"""
   // Step 4.a: Set AUXEVOL gridfunctions that will never change in time.
   initialize_constant_auxevol(&commondata, griddata_chare);
 """
@@ -473,6 +525,12 @@ Timestepping::~Timestepping() {
   for(int grid=0; grid<commondata.NUMGRIDS; grid++) {
     MoL_free_memory_y_n_gfs(&griddata_chare[grid].gridfuncs);
     MoL_free_memory_non_y_n_gfs(&griddata_chare[grid].gridfuncs);
+    """
+    if superb_auxevol_variables_list:
+      file_output_str += r"""
+    MoL_free_memory_superb_auxevol_gfs(&griddata_chare[grid].gridfuncs);
+"""
+    file_output_str += r""" 
     MoL_free_memory_diagnostic_gfs(&griddata_chare[grid].gridfuncs);
     timestepping_free_memory_tmpBuffer(&griddata_chare[grid].tmpBuffers);"""
     if enable_rfm_precompute:
@@ -544,7 +602,7 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
     case EAST_WEST:
       //send to west
       if (thisIndex.x > 0) {
-        for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+        for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
           int i0 = 2*NGHOSTS - 1;
           for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
             for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -555,11 +613,11 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
             i0--;
           }
         }
-        thisProxy[CkArrayIndex3D(thisIndex.x - 1, thisIndex.y, thisIndex.z)].east_ghost(type_gfs, NUM_EVOL_GFS*NGHOSTS*Nxx_plus_2NGHOSTS1*Nxx_plus_2NGHOSTS2, tmpBuffer_EW);
+        thisProxy[CkArrayIndex3D(thisIndex.x - 1, thisIndex.y, thisIndex.z)].east_ghost(type_gfs, NUM_GFS*NGHOSTS*Nxx_plus_2NGHOSTS1*Nxx_plus_2NGHOSTS2, tmpBuffer_EW);
       }
       //send to east
       if (thisIndex.x < Nchare0 - 1) {
-        for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+        for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
           int i0 = Nxx0;
           for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
             for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -570,13 +628,13 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
             i0++;
           }
         }
-        thisProxy[CkArrayIndex3D(thisIndex.x + 1, thisIndex.y, thisIndex.z)].west_ghost(type_gfs, NUM_EVOL_GFS*NGHOSTS*Nxx_plus_2NGHOSTS1*Nxx_plus_2NGHOSTS2, tmpBuffer_EW);
+        thisProxy[CkArrayIndex3D(thisIndex.x + 1, thisIndex.y, thisIndex.z)].west_ghost(type_gfs, NUM_GFS*NGHOSTS*Nxx_plus_2NGHOSTS1*Nxx_plus_2NGHOSTS2, tmpBuffer_EW);
       }
       break;
     case NORTH_SOUTH:
       //send to south
       if (thisIndex.y > 0) {
-        for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+        for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
           int i1 = 2*NGHOSTS - 1;
           for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
             for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -587,11 +645,11 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
             i1--;
           }
         }
-        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y - 1, thisIndex.z)].north_ghost(type_gfs, NUM_EVOL_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS2, tmpBuffer_NS);
+        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y - 1, thisIndex.z)].north_ghost(type_gfs, NUM_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS2, tmpBuffer_NS);
       }
       //send to north
       if (thisIndex.y < Nchare1 - 1) {
-        for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+        for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
           int i1 = Nxx1;
           for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
             for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -602,13 +660,13 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
             i1++;
           }
         }
-        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y + 1, thisIndex.z)].south_ghost(type_gfs, NUM_EVOL_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS2, tmpBuffer_NS);
+        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y + 1, thisIndex.z)].south_ghost(type_gfs, NUM_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS2, tmpBuffer_NS);
       }
       break;
     case TOP_BOTTOM:
       //send to bottom
       if (thisIndex.z > 0) {
-        for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+        for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
           int i2 = 2*NGHOSTS - 1;
           for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
             for (int i1 = 0; i1 < Nxx_plus_2NGHOSTS1; i1++) {
@@ -619,11 +677,11 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
             i2--;
           }
         }
-        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y, thisIndex.z - 1)].top_ghost(type_gfs, NUM_EVOL_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS1, tmpBuffer_TB);
+        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y, thisIndex.z - 1)].top_ghost(type_gfs, NUM_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS1, tmpBuffer_TB);
       }
       //send to top
       if (thisIndex.z < Nchare2 - 1) {
-        for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+        for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
           int i2 = Nxx2;
           for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
             for (int i1 = 0; i1 < Nxx_plus_2NGHOSTS1; i1++) {
@@ -634,7 +692,7 @@ void Timestepping::send_neighbor_data(const int type_gfs, const int dir, const i
             i2++;
           }
         }
-        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y, thisIndex.z + 1)].bottom_ghost(type_gfs, NUM_EVOL_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS1, tmpBuffer_TB);
+        thisProxy[CkArrayIndex3D(thisIndex.x, thisIndex.y, thisIndex.z + 1)].bottom_ghost(type_gfs, NUM_GFS*NGHOSTS*Nxx_plus_2NGHOSTS0*Nxx_plus_2NGHOSTS1, tmpBuffer_TB);
       }
       break;
     default:
@@ -659,7 +717,7 @@ void Timestepping::process_ghost(const int type_ghost, const int type_gfs, const
     file_output_str += r"""
   switch (type_ghost) {
     case EAST_GHOST:
-      for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+      for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
         int i0 = Nxx0 + (2 * NGHOSTS) - 1;
         for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
           for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -672,7 +730,7 @@ void Timestepping::process_ghost(const int type_ghost, const int type_gfs, const
       }
       break;
     case WEST_GHOST:
-      for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+      for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
         int i0 = 0;
         for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
           for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -685,7 +743,7 @@ void Timestepping::process_ghost(const int type_ghost, const int type_gfs, const
       }
       break;
     case NORTH_GHOST:
-      for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+      for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
         int i1 = Nxx1 + (2 * NGHOSTS) - 1;
         for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
           for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -698,7 +756,7 @@ void Timestepping::process_ghost(const int type_ghost, const int type_gfs, const
       }
       break;
     case SOUTH_GHOST:
-      for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+      for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
         int i1 = 0;
         for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
           for (int i2 = 0; i2 < Nxx_plus_2NGHOSTS2; i2++) {
@@ -711,7 +769,7 @@ void Timestepping::process_ghost(const int type_ghost, const int type_gfs, const
       }
       break;
     case TOP_GHOST:
-      for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+      for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
         int i2 = Nxx2 + (2 * NGHOSTS) - 1;
         for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
           for (int i1 = 0; i1 < Nxx_plus_2NGHOSTS1; i1++) {
@@ -724,7 +782,7 @@ void Timestepping::process_ghost(const int type_ghost, const int type_gfs, const
       }
       break;
     case BOTTOM_GHOST:
-      for (int which_gf = 0; which_gf < NUM_EVOL_GFS; which_gf++) {
+      for (int which_gf = 0; which_gf < NUM_GFS; which_gf++) {
         int i2 = 0;
         for (int which_inner = 0; which_inner < NGHOSTS; which_inner++) {
           for (int i1 = 0; i1 < Nxx_plus_2NGHOSTS1; i1++) {
@@ -823,6 +881,14 @@ def output_timestepping_ci(
         file_output_str += generate_send_neighbor_data_code(
             "Y_N_GFS", grid_split_direction
         )
+        file_output_str += generate_ghost_code(
+            loop_direction, pos_ghost_type, neg_ghost_type, nchare_var
+        )
+
+        # communicate auxevol gfs 
+        file_output_str += generate_send_neighbor_data_code(
+                "SUPERB_AUXEVOL_GFS", grid_split_direction
+            )
         file_output_str += generate_ghost_code(
             loop_direction, pos_ghost_type, neg_ghost_type, nchare_var
         )
@@ -1005,6 +1071,14 @@ def output_timestepping_ci(
                 file_output_str += generate_ghost_code(
                     loop_direction, pos_ghost_type, neg_ghost_type, nchare_var
                 )
+
+            # communicate auxevol gfs 
+            file_output_str += generate_send_neighbor_data_code(
+                    "SUPERB_AUXEVOL_GFS", grid_split_direction
+                )
+            file_output_str += generate_ghost_code(
+                loop_direction, pos_ghost_type, neg_ghost_type, nchare_var
+            )
 
     file_output_str += r"""
         """
