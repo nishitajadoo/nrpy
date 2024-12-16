@@ -61,7 +61,8 @@ par.set_parval_from_str("Infrastructure", "BHaH")
 
 # Code-generation-time parameters:
 project_name = "superB_blackhole_spectroscopy"
-CoordSystem = "SinhSpherical"
+# ~ CoordSystem = "SinhSpherical"
+CoordSystem = "SinhCylindrical"
 IDtype = "TP_Interp"
 IDCoordSystem = "Cartesian"
 
@@ -90,7 +91,7 @@ swm2sh_maximum_l_mode_generated = 8
 swm2sh_maximum_l_mode_to_compute = 2  # for consistency with NRPy 1.0 version.
 Nxx_dict = {
     "SinhSpherical": [800, 16, 2],
-    "SinhCylindrical": [400, 2, 800],
+    "SinhCylindrical": [64, 2, 200],
 }
 default_BH1_mass = default_BH2_mass = 0.5
 default_BH1_z_posn = +0.25
@@ -113,9 +114,9 @@ if "Spherical" in CoordSystem:
     par.adjust_CodeParam_default("Nchare1", 2)
     par.adjust_CodeParam_default("Nchare2", 1)
 if "Cylindrical" in CoordSystem:
-    par.adjust_CodeParam_default("Nchare0", 10)
+    par.adjust_CodeParam_default("Nchare0", 4)
     par.adjust_CodeParam_default("Nchare1", 1)
-    par.adjust_CodeParam_default("Nchare2", 20)
+    par.adjust_CodeParam_default("Nchare2", 10)
 
 OMP_collapse = 1
 if "Spherical" in CoordSystem:
@@ -185,6 +186,7 @@ superBdiagnostics.register_CFunction_diagnostics(
     ),
     out_quantities_dict="default",
     enable_psi4_diagnostics=True,
+    enable_L2norm_BSSN_constraints_diagnostics=True,
 )
 if enable_rfm_precompute:
     rfm_precompute.register_CFunctions_rfm_precompute(
@@ -365,6 +367,7 @@ superBtimestepping.output_timestepping_h_cpp_ci_register_CFunctions(
     outer_bcs_type=outer_bcs_type,
     enable_psi4_diagnostics=True,
     enable_charm_checkpointing=enable_charm_checkpointing,
+    enable_L2norm_BSSN_constraints_diagnostics=True,
 )
 
 superBpup.register_CFunction_superB_pup_routines(
