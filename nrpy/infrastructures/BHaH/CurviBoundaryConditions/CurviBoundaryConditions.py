@@ -1746,6 +1746,31 @@ def register_griddata_commondata() -> None:
     )
 
 
+def generate_bc_info_struct_bc_struct_defines() -> str:
+    """
+    Return the C typedef string for the bc_info_struct and bc_struct definitions.
+
+    :return: Multi-line C code defining bc_info_struct and bc_struct.
+    """
+    return r"""
+    typedef struct __bc_info_struct__ {
+      int num_inner_boundary_points;  // stores total number of inner boundary points
+      int num_pure_outer_boundary_points[NGHOSTS][3];  // stores number of outer boundary points on each
+      //                                                  ghostzone level and direction (update min and
+      //                                                  max faces simultaneously on multiple cores)
+      int bc_loop_bounds[NGHOSTS][6][6];  // stores outer boundary loop bounds. Unused after bcstruct_set_up()
+    } bc_info_struct;
+
+    typedef struct __bc_struct__ {
+      innerpt_bc_struct *restrict inner_bc_array;  // information needed for updating each inner boundary point
+      outerpt_bc_struct *restrict pure_outer_bc_array[NGHOSTS*3]; // information needed for updating each outer
+      //                                                             boundary point
+      bc_info_struct bc_info;  // stores number of inner and outer boundary points, needed for setting loop
+      //                          bounds and parallelizing over as many boundary points as possible.
+    } bc_struct;
+    """
+
+
 def register_BHaH_defines_h(
     set_parity_on_aux: bool = False,
     set_parity_on_auxevol: bool = False,
@@ -1783,23 +1808,10 @@ def register_BHaH_defines_h(
       //                               FACEX0,FACEX1,FACEX2 =  0, 0,+1 if on the i2=i2min face, or
       //                               FACEX0,FACEX1,FACEX2 =  0, 0,-1 if on the i2=i2max face,
     } outerpt_bc_struct;
-
-    typedef struct __bc_info_struct__ {
-      int num_inner_boundary_points;  // stores total number of inner boundary points
-      int num_pure_outer_boundary_points[NGHOSTS][3];  // stores number of outer boundary points on each
-      //                                                  ghostzone level and direction (update min and
-      //                                                  max faces simultaneously on multiple cores)
-      int bc_loop_bounds[NGHOSTS][6][6];  // stores outer boundary loop bounds. Unused after bcstruct_set_up()
-    } bc_info_struct;
-
-    typedef struct __bc_struct__ {
-      innerpt_bc_struct *restrict inner_bc_array;  // information needed for updating each inner boundary point
-      outerpt_bc_struct *restrict pure_outer_bc_array[NGHOSTS*3]; // information needed for updating each outer
-      //                                                             boundary point
-      bc_info_struct bc_info;  // stores number of inner and outer boundary points, needed for setting loop
-      //                          bounds and parallelizing over as many boundary points as possible.
-    } bc_struct;
     """
+
+    CBC_BHd_str += generate_bc_info_struct_bc_struct_defines()
+
     CBC_BHd_str += BHaH_defines_set_gridfunction_defines_with_parity_types(
         set_parity_on_aux=set_parity_on_aux,
         set_parity_on_auxevol=set_parity_on_auxevol,
