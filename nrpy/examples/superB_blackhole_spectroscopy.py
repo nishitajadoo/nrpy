@@ -70,7 +70,7 @@ BH_M_chix = 0.0  # dimensionless spin parameter for more-massive BH
 initial_p_r = 0.0  # want this to be <= 0.0. 0.0 -> fall from rest, < 0.0 -> boosted toward each other.
 TP_npoints_A = 48
 TP_npoints_B = 48
-TP_npoints_phi = 4
+TP_npoints_phi = 4 if not last_orbit else 20
 
 enable_KreissOliger_dissipation = True
 enable_CAKO = True
@@ -238,7 +238,9 @@ if enable_BHaHAHA:
 # STEP 2: Declare core C functions & register each to
 #         cfc.CFunction_dict["function_name"]
 BHaH.general_relativity.NRPyPN_quasicircular_momenta.register_CFunction_NRPyPN_quasicircular_momenta()
-BHaH.general_relativity.TwoPunctures.TwoPunctures_lib.register_C_functions()
+BHaH.general_relativity.TwoPunctures.TwoPunctures_lib.register_C_functions(
+    enable_xy_plane=last_orbit
+)
 superB.initial_data.register_CFunction_initial_data(
     IDtype=IDtype,
     IDCoordSystem=IDCoordSystem,
@@ -451,7 +453,8 @@ if (paper or last_orbit) and enable_psi4:
 if enable_BHaHAHA:
     # Set BHaHAHA defaults to reasonable values.
     par.adjust_CodeParam_default(
-        "bah_initial_grid_z_center", [default_BH1_z_posn, default_BH2_z_posn, 0.0]
+        "bah_initial_grid_z_center" if not last_orbit else "bah_initial_grid_x_center",
+        [default_BH1_z_posn, default_BH2_z_posn, 0.0],
     )
     par.adjust_CodeParam_default("bah_Nr_interp_max", 40)
     par.adjust_CodeParam_default(
