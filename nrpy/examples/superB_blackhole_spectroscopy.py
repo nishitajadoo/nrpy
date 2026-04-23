@@ -82,7 +82,6 @@ KreissOliger_strength_nongauge = 0.3
 LapseEvolutionOption = "OnePlusLog"
 ShiftEvolutionOption = "GammaDriving2ndOrder_Covariant"
 GammaDriving_eta = 2.0
-# grid_physical_size = 300.0 if not last_orbit else 114.0
 grid_physical_size = 300.0 if not last_orbit else 176.6
 diagnostics_output_every = 0.5
 enable_charm_checkpointing = True
@@ -101,8 +100,8 @@ if (paper or last_orbit) and enable_psi4:
 Nxx_dict = {
     "SinhSpherical": [800, 16, 2],
     "SinhCylindrical": [400, 2, 1200] if not paper else [800, 2, 2400],
-    "GeneralRFM_fisheyeN1": [200, 200, 200] if not last_orbit else [576, 576, 288],
-    "GeneralRFM_fisheyeN2": [200, 200, 200] if not last_orbit else [448, 448, 448],
+    "GeneralRFM_fisheyeN1": [200, 200, 200] if not last_orbit else [576, 576, 576],
+    "GeneralRFM_fisheyeN2": [200, 200, 200],
 }
 default_BH1_mass = default_BH2_mass = 0.5
 default_BH1_z_posn = (
@@ -121,7 +120,6 @@ if num_fisheye_transitions == 1:
             "fisheye_phys_L": grid_physical_size,
             "fisheye_phys_r_trans1": 50.0,
             "fisheye_phys_w_trans1": 10.0,
-            "fisheye_oblate_z_factor": 1.0,
         }
     else:
         fisheye_param_defaults = {
@@ -129,11 +127,9 @@ if num_fisheye_transitions == 1:
             "fisheye_phys_a1": 25.0,
             "fisheye_phys_L": grid_physical_size,
             "fisheye_phys_r_trans1": 7.0,
-            "fisheye_phys_w_trans1": 25.0,
-            "fisheye_oblate_z_factor": 0.5,
+            "fisheye_phys_w_trans1": 8.0,
         }
 elif num_fisheye_transitions == 2:
-    if not last_orbit:
         fisheye_param_defaults = {
             "fisheye_phys_a0": 1.0,
             "fisheye_phys_a1": 2.0,
@@ -143,23 +139,6 @@ elif num_fisheye_transitions == 2:
             "fisheye_phys_w_trans1": 10.0,
             "fisheye_phys_r_trans2": 150.0,
             "fisheye_phys_w_trans2": 20.0,
-        }
-    else:
-        fisheye_param_defaults = {
-            "fisheye_phys_a0": 1.0,
-            "fisheye_phys_a1": 5.0,
-            "fisheye_phys_a2": 30.0,
-            "fisheye_phys_L": grid_physical_size,
-            "fisheye_phys_r_trans1": 5.0,
-            "fisheye_phys_w_trans1": 0.75,
-            "fisheye_phys_r_trans2": 7.5,
-            "fisheye_phys_w_trans2": 0.75,
-            # Converted physical values corresponding to internal/map-space
-            # Campanelli-style settings (R1=5, s1=0.75, R2=7.5, s2=0.75):
-            # "fisheye_phys_r_trans1": 2.1474875779486025e-01,
-            # "fisheye_phys_w_trans1": 1.6274487980499888e-01,
-            # "fisheye_phys_r_trans2": 8.5167661240442805e-01,
-            # "fisheye_phys_w_trans2": 9.3102848266479421e-01,
         }
 enable_rfm_precompute = True
 MoL_method = "RK4" if not paper else "SSPRK33"
