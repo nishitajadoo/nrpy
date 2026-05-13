@@ -20,14 +20,13 @@ Note: This is the superB version.
 
 import argparse
 import os
-
-#########################################################
-# STEP 1: Import needed Python modules, then set codegen
-#         and compile-time parameters.
 import shutil
 import subprocess
 from pathlib import Path
 
+#########################################################
+# STEP 1: Import needed Python modules, then set codegen
+#         and compile-time parameters.
 import nrpy.helpers.parallel_codegen as pcg
 import nrpy.params as par
 from nrpy.helpers.generic import copy_files
@@ -43,30 +42,35 @@ parser.add_argument(
     help="use Campanelli-Lousto-Zlochower last-orbit (gr-qc/0601091) parameters",
 )
 parser.add_argument(
-    "--last_3orbits",
+    "--separation_8M",
     action="store_true",
     help=(
-        "use 8M-separation parameters with same-offset fisheye "
-        "(r_trans1=8, w_trans1=8) and Nxx=624"
+        "use an 8M-separation fisheye run with the tuned 6-transition fisheye "
+        "parameters and Nxx=748"
     ),
 )
 args = parser.parse_args()
 paper = args.paper
 last_orbit = args.last_orbit
-last_3orbits = args.last_3orbits
+separation_8M = args.separation_8M
 
-if (paper and last_orbit) or (paper and last_3orbits) or (last_orbit and last_3orbits):
+if sum([paper, last_orbit, separation_8M]) > 1:
     raise ValueError(
-        "--paper, --last_orbit, and --last_3orbits are mutually exclusive."
+        "--paper, --last_orbit, and --separation_8M are mutually exclusive."
     )
 
-use_last_orbit_like = last_orbit or last_3orbits
+use_generalrfm_fisheye = last_orbit or separation_8M
+use_twopunctures_xy_plane = separation_8M
 
 par.set_parval_from_str("Infrastructure", "BHaH")
 
 # Code-generation-time parameters:
 project_name = "superB_blackhole_spectroscopy"
-CoordSystem = "SinhCylindrical" if not use_last_orbit_like else "GeneralRFM_fisheyeN1"
+CoordSystem = (
+    "GeneralRFM_fisheyeN6"
+    if separation_8M
+    else ("SinhCylindrical" if not use_generalrfm_fisheye else "GeneralRFM_fisheyeN1")
+)
 set_of_CoordSystems = {CoordSystem}
 IDtype = "TP_Interp"
 IDCoordSystem = "Cartesian"
@@ -78,18 +82,18 @@ num_fisheye_transitions = (
 
 initial_sep = (
     0.5
-    if (not paper and not use_last_orbit_like)
-    else (10.0 if paper else (8.0 if last_3orbits else 6.0))
+    if (not paper and not use_generalrfm_fisheye)
+    else (10.0 if paper else (8.0 if separation_8M else 6.0))
 )
 mass_ratio = 1.0  # must be >= 1.0. Will need higher resolution for > 1.0.
 BH_m_chix = 0.0  # dimensionless spin parameter for less-massive BH
 BH_M_chix = 0.0  # dimensionless spin parameter for more-massive BH
 initial_p_r = (
-    2.284343811437988e-03 if last_3orbits else 0.0
-)  # default 0.0: fall from rest; --last_3orbits uses quasicircular NRPyPN p_r.
+    2.284343811437988e-03 if separation_8M else 0.0
+)  # default 0.0: fall from rest; 8M-separation mode uses quasicircular NRPyPN p_r.
 TP_npoints_A = 48
 TP_npoints_B = 48
-TP_npoints_phi = 4 if not use_last_orbit_like else 20
+TP_npoints_phi = 4 if not use_generalrfm_fisheye else 20
 
 enable_KreissOliger_dissipation = True
 enable_CAKO = True
@@ -101,50 +105,53 @@ KreissOliger_strength_nongauge = 0.3
 LapseEvolutionOption = "OnePlusLog"
 ShiftEvolutionOption = "GammaDriving2ndOrder_Covariant"
 GammaDriving_eta = 2.0
-grid_physical_size = 300.0 if not use_last_orbit_like else 176.6
+grid_physical_size = (
+    300.0 if not use_generalrfm_fisheye else (400.0 if separation_8M else 176.6)
+)
 diagnostics_output_every = 0.5 if not last_orbit else 0.25
 enable_charm_checkpointing = True
 default_checkpoint_every = 20.0
 t_final = (
     1.5 * grid_physical_size
-    if not use_last_orbit_like
-    else (1000.0 if last_3orbits else 200.0)
+    if not use_generalrfm_fisheye
+    else (1000.0 if separation_8M else 200.0)
 )
 enable_psi4 = True
 if enable_psi4 and not enable_BHaHAHA:
     raise ValueError("enable_psi4 requires enable_BHaHAHA to be True.")
 swm2sh_maximum_l_mode_generated = 8
-swm2sh_maximum_l_mode_to_compute = 2 if not paper else 8
-if (paper or use_last_orbit_like) and enable_psi4:
+swm2sh_maximum_l_mode_to_compute = 8 if (paper or separation_8M) else 2
+if (paper or use_generalrfm_fisheye) and enable_psi4:
     list_of_psi4_extraction_radii = (
-        [80.0, 160.0] if not use_last_orbit_like else [15.0, 20.0, 25.0, 30.0]
+        [80.0, 160.0]
+        if paper
+        else ([60.0, 90.0, 120.0, 150.0] if separation_8M else [15.0, 20.0, 25.0, 30.0])
     )
     num_psi4_extraction_radii = len(list_of_psi4_extraction_radii)
 Nxx_dict = {
     "SinhSpherical": [800, 16, 2],
     "SinhCylindrical": [400, 2, 1200] if not paper else [800, 2, 2400],
     "GeneralRFM_fisheyeN1": (
-        [200, 200, 200]
-        if not use_last_orbit_like
-        else ([624, 624, 624] if last_3orbits else [576, 576, 576])
+        [200, 200, 200] if not use_generalrfm_fisheye else [576, 576, 576]
     ),
     "GeneralRFM_fisheyeN2": [200, 200, 200],
+    "GeneralRFM_fisheyeN6": [748, 748, 748],
 }
 default_BH1_mass = default_BH2_mass = 0.5
 default_BH1_z_posn = (
     +0.25
-    if (not paper and not use_last_orbit_like)
-    else (+5.0 if paper else (+4.0 if last_3orbits else +3.0))
+    if (not paper and not use_generalrfm_fisheye)
+    else (+5.0 if paper else (+4.0 if separation_8M else +3.0))
 )
 default_BH2_z_posn = (
     -0.25
-    if (not paper and not use_last_orbit_like)
-    else (-5.0 if paper else (-4.0 if last_3orbits else -3.0))
+    if (not paper and not use_generalrfm_fisheye)
+    else (-5.0 if paper else (-4.0 if separation_8M else -3.0))
 )
 # Fisheye parameters
 fisheye_param_defaults: dict[str, float] = {}
 if num_fisheye_transitions == 1:
-    if not use_last_orbit_like:
+    if not use_generalrfm_fisheye:
         fisheye_param_defaults = {
             "fisheye_phys_a0": 1.0,
             "fisheye_phys_a1": 2.0,
@@ -157,7 +164,7 @@ if num_fisheye_transitions == 1:
             "fisheye_phys_a0": 1.0,
             "fisheye_phys_a1": 25.0,
             "fisheye_phys_L": grid_physical_size,
-            "fisheye_phys_r_trans1": 8.0 if last_3orbits else 7.0,
+            "fisheye_phys_r_trans1": 7.0,
             "fisheye_phys_w_trans1": 8.0,
         }
 elif num_fisheye_transitions == 2:
@@ -171,9 +178,32 @@ elif num_fisheye_transitions == 2:
         "fisheye_phys_r_trans2": 150.0,
         "fisheye_phys_w_trans2": 20.0,
     }
+elif num_fisheye_transitions == 6:
+    fisheye_param_defaults = {
+        "fisheye_phys_a0": 1.0,
+        "fisheye_phys_a1": 2.0,
+        "fisheye_phys_a2": 4.0,
+        "fisheye_phys_a3": 8.0,
+        "fisheye_phys_a4": 16.0,
+        "fisheye_phys_a5": 32.0,
+        "fisheye_phys_a6": 64.0,
+        "fisheye_phys_L": grid_physical_size,
+        "fisheye_phys_r_trans1": 5.0,
+        "fisheye_phys_w_trans1": 1.0,
+        "fisheye_phys_r_trans2": 12.5,
+        "fisheye_phys_w_trans2": 6.25,
+        "fisheye_phys_r_trans3": 25.0,
+        "fisheye_phys_w_trans3": 12.5,
+        "fisheye_phys_r_trans4": 50.0,
+        "fisheye_phys_w_trans4": 25.0,
+        "fisheye_phys_r_trans5": 100.0,
+        "fisheye_phys_w_trans5": 50.0,
+        "fisheye_phys_r_trans6": 200.0,
+        "fisheye_phys_w_trans6": 100.0,
+    }
 enable_rfm_precompute = True
 MoL_method = "RK4" if not paper else "SSPRK33"
-fd_order = 8 if not use_last_orbit_like else 4
+fd_order = 8 if separation_8M or not use_generalrfm_fisheye else 4
 radiation_BC_fd_order = 4 if not paper else 8
 enable_intrinsics = True
 separate_Ricci_and_BSSN_RHS = True
@@ -211,6 +241,8 @@ if "Cylindrical" in CoordSystem:
     par.set_parval_from_str("symmetry_axes", "1")
     par.adjust_CodeParam_default("CFL_FACTOR", 0.5)
     OMP_collapse = 2  # might be slightly faster
+if separation_8M:
+    par.adjust_CodeParam_default("CFL_FACTOR", 0.5)
 
 project_dir = os.path.join("project", project_name)
 
@@ -275,7 +307,7 @@ if enable_BHaHAHA:
 #         cfc.CFunction_dict["function_name"]
 BHaH.general_relativity.NRPyPN_quasicircular_momenta.register_CFunction_NRPyPN_quasicircular_momenta()
 BHaH.general_relativity.TwoPunctures.TwoPunctures_lib.register_C_functions(
-    enable_xy_plane=use_last_orbit_like
+    enable_xy_plane=use_twopunctures_xy_plane
 )
 superB.initial_data.register_CFunction_initial_data(
     IDtype=IDtype,
@@ -468,8 +500,8 @@ par.adjust_CodeParam_default(
     "initial_p_t",
     (
         0.0
-        if not use_last_orbit_like
-        else (1.128452350970957e-01 if last_3orbits else 0.13808)
+        if not use_generalrfm_fisheye
+        else (1.128452350970957e-01 if separation_8M else 0.13808)
     ),
 )
 par.adjust_CodeParam_default("initial_p_r", initial_p_r)
@@ -479,10 +511,12 @@ par.adjust_CodeParam_default("TP_npoints_phi", TP_npoints_phi)
 # Leave TwoPunctures bare masses unset by default so it solves for them
 # to match target ADM masses, as in the original, NRPy1 workflow.
 par.adjust_CodeParam_default(
-    "TP_bare_mass_m", -1.0 if (not use_last_orbit_like or last_3orbits) else 0.47656
+    "TP_bare_mass_m",
+    -1.0 if (not use_generalrfm_fisheye or separation_8M) else 0.47656,
 )
 par.adjust_CodeParam_default(
-    "TP_bare_mass_M", -1.0 if (not use_last_orbit_like or last_3orbits) else 0.47656
+    "TP_bare_mass_M",
+    -1.0 if (not use_generalrfm_fisheye or separation_8M) else 0.47656,
 )
 # Evolution / diagnostics parameters
 par.adjust_CodeParam_default("eta", GammaDriving_eta)
@@ -490,7 +524,7 @@ if enable_psi4:
     par.adjust_CodeParam_default(
         "swm2sh_maximum_l_mode_to_compute", swm2sh_maximum_l_mode_to_compute
     )
-if (paper or use_last_orbit_like) and enable_psi4:
+if (paper or use_generalrfm_fisheye) and enable_psi4:
     par.adjust_CodeParam_default("num_psi4_extraction_radii", num_psi4_extraction_radii)
     par.adjust_CodeParam_default(
         "list_of_psi4_extraction_radii",
@@ -502,7 +536,7 @@ if enable_BHaHAHA:
     par.adjust_CodeParam_default(
         (
             "bah_initial_grid_z_center"
-            if not use_last_orbit_like
+            if not use_twopunctures_xy_plane
             else "bah_initial_grid_x_center"
         ),
         [default_BH1_z_posn, default_BH2_z_posn, 0.0],
@@ -514,17 +548,19 @@ if enable_BHaHAHA:
     )
     par.adjust_CodeParam_default(
         "bah_max_search_radius",
-        [
-            0.6 * default_BH1_mass,
-            0.6 * default_BH2_mass,
-            1.1 * (default_BH1_mass + default_BH2_mass),
-        ]
-        if not last_orbit else
-        [
-            1.2 * default_BH1_mass,
-            1.2 * default_BH2_mass,
-            1.3 * (default_BH1_mass + default_BH2_mass),
-        ]
+        (
+            [
+                0.6 * default_BH1_mass,
+                0.6 * default_BH2_mass,
+                1.1 * (default_BH1_mass + default_BH2_mass),
+            ]
+            if not last_orbit
+            else [
+                1.2 * default_BH1_mass,
+                1.2 * default_BH2_mass,
+                1.3 * (default_BH1_mass + default_BH2_mass),
+            ]
+        ),
     )
     par.adjust_CodeParam_default("bah_verbosity_level", 0)
 
